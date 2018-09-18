@@ -36,7 +36,7 @@ func (a *App) InitDB(dbName string) error {
 
 func (a *App) InitRouter() {
 	a.Router = mux.NewRouter()
-	a.Router.HandleFunc("/user", a.createUser).Methods("POST")
+	a.Router.HandleFunc("/user", a.createUser).Queries("name", "{name}").Methods("POST")
 	// Built-in id validations
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.updateUser).Methods("PUT")
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.getUser).Methods("GET")
@@ -44,7 +44,21 @@ func (a *App) InitRouter() {
 }
 
 func (a *App) createUser(w http.ResponseWriter, r *http.Request) {
-	respondWithError(w, http.StatusNotImplemented, "n/a")
+	vars := mux.Vars(r)
+	// FIXME: need proper validation here
+	if len(vars["name"]) >= 255 {
+		respondWithError(w, http.StatusBadRequest, "query parameter is invalid.")
+		return
+
+	}
+	u := user{Name: vars["name"]}
+
+	if err := u.createUser(a.DB); err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusInternalServerError, "User could not be created.")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, u)
 }
 
 func (a *App) updateUser(w http.ResponseWriter, r *http.Request) {

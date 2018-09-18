@@ -11,7 +11,9 @@ type user struct {
 }
 
 func (u *user) createUser(db *sql.DB) error {
-	return errors.New("TBD")
+	statement := `INSERT INTO users(name) VALUES('?')`
+	_, err := db.Exec(statement, u.Name)
+	return err
 }
 
 func (u *user) updateUser(db *sql.DB) error {
