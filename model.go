@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 )
 
 type user struct {
@@ -20,8 +19,8 @@ func (u *user) updateUser(db *sql.DB) error {
 }
 
 func (u *user) getUser(db *sql.DB) error {
-	statement := fmt.Sprintf("SELECT name FROM users WHERE id=%d", u.ID)
-	return db.QueryRow(statement).Scan(&u.Name)
+	statement := `SELECT name FROM users WHERE id=$1`
+	return db.QueryRow(statement, u.ID).Scan(&u.Name)
 }
 
 func (u *user) deleteUser(db *sql.DB) error {

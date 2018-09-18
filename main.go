@@ -61,9 +61,11 @@ func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 
 	u := user{ID: id}
 	if err := u.getUser(a.DB); err != nil {
+		log.Error(err)
 		respondWithError(w, http.StatusNotFound, "User not found")
 		return
 	}
+	respondWithJSON(w, http.StatusOK, u)
 }
 
 func (a *App) deleteUser(w http.ResponseWriter, r *http.Request) {

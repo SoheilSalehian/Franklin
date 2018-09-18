@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/prometheus/common/log"
 )
 
 var a App
@@ -27,15 +28,27 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	a.DB.Exec("DELETE FROM users")
-	a.DB.Exec("ALTER TABLE users AUTO_INCREMENT = 1")
+	_, err := a.DB.Exec("DELETE FROM users")
+	if err != nil {
+		log.Error(err)
+	}
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	if err != nil {
+		log.Error(err)
+	}
 
 	os.Exit(code)
 }
 
 func TestUserIDDoesNotExist(t *testing.T) {
-	a.DB.Exec("DELETE FROM users")
-	a.DB.Exec("ALTER TABLE users AUTO_INCREMENT = 1")
+	_, err := a.DB.Exec("DELETE FROM users")
+	if err != nil {
+		log.Error(err)
+	}
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	if err != nil {
+		log.Error(err)
+	}
 
 	req, _ := http.NewRequest("GET", "/user/15", nil)
 
@@ -50,5 +63,31 @@ func TestUserIDDoesNotExist(t *testing.T) {
 	json.Unmarshal(response.Body.Bytes(), &m)
 	if m["error"] != "User not found" {
 		t.Errorf("Expected the 'error' key of the response to be set to 'User not found'. Got '%s'", m["error"])
+	}
+}
+
+func TestGetUser(t *testing.T) {
+	_, err := a.DB.Exec("DELETE FROM users")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO users(name) VALUES('Test User')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	req, _ := http.NewRequest("GET", "/user/1", nil)
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
 	}
 }
