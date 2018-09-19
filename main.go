@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/prometheus/common/log"
@@ -30,28 +32,37 @@ func (a *App) InitDB(dbName string) error {
 		return err
 	}
 
-	log.Info("connection to DB successful.")
+	log.Info("successful connection to DB: ", dbName)
 	return nil
 }
 
 func (a *App) InitRouter() {
 	a.Router = mux.NewRouter()
-	a.Router.HandleFunc("/user", a.createUser).Queries("name", "{name}").Methods("POST")
+	a.Router.HandleFunc("/signin/", a.basicAuth(a.signin)).Methods("POST")
+	a.Router.HandleFunc("/user/", a.createUser).Methods("POST")
 	// Built-in id validations
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.updateUser).Methods("PUT")
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.getUser).Methods("GET")
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.deleteUser).Methods("DELETE")
 }
 
+// TODO: need to add email verification with redirct to secure this
 func (a *App) createUser(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	// FIXME: need proper validation here
-	if len(vars["name"]) >= 255 {
-		respondWithError(w, http.StatusBadRequest, "query parameter is invalid.")
-		return
 
+	username, password, _ := r.BasicAuth()
+	if !userValidations(username, password) {
+		log.Error("User name validation failed.")
+		respondWithError(w, http.StatusBadRequest, "username/password is invalid.")
+		return
 	}
-	u := user{Name: vars["name"]}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusInternalServerError, "User could not be created.")
+	}
+
+	u := user{Name: username, Password: string(hashedPassword)}
 
 	if err := u.createUser(a.DB); err != nil {
 		log.Error(err)
@@ -61,14 +72,11 @@ func (a *App) createUser(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, u)
 }
 
-func (a *App) updateUser(w http.ResponseWriter, r *http.Request) {
-	respondWithError(w, http.StatusNotImplemented, "n/a")
-}
-
 func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
+		log.Error(err)
 		respondWithError(w, http.StatusBadRequest, "User ID is invalid.")
 		return
 	}
@@ -82,7 +90,15 @@ func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, u)
 }
 
+func (a *App) signin(w http.ResponseWriter, r *http.Request) {
+	respondWithJSON(w, http.StatusOK, map[string]string{"result": "Sign-in successful."})
+}
+
 func (a *App) deleteUser(w http.ResponseWriter, r *http.Request) {
+	respondWithError(w, http.StatusNotImplemented, "n/a")
+}
+
+func (a *App) updateUser(w http.ResponseWriter, r *http.Request) {
 	respondWithError(w, http.StatusNotImplemented, "n/a")
 }
 
@@ -96,6 +112,54 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	w.Write(response)
+}
+
+func (a *App) basicAuth(fn http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username, password, _ := r.BasicAuth()
+
+		if !userValidations(username, password) {
+			log.Error("User name validation failed.")
+			respondWithError(w, http.StatusBadRequest, "username/password is invalid.")
+			return
+		}
+		result := a.DB.QueryRow("SELECT password FROM users WHERE name=$1", username)
+		if result == nil {
+			log.Error("could not find user: ", username)
+			respondWithError(w, http.StatusUnauthorized, "Unauthorized.")
+			return
+		}
+
+		var hashedPassword string
+
+		err := result.Scan(&hashedPassword)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				log.Error(err)
+				respondWithError(w, http.StatusUnauthorized, "Unauthorized.")
+				return
+			}
+			log.Error(err)
+			respondWithError(w, http.StatusInternalServerError, "Internal server errror.")
+			return
+		}
+
+		if err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
+			log.Error(err)
+			respondWithError(w, http.StatusUnauthorized, "Unauthorized.")
+			return
+		}
+		fn(w, r)
+	}
+}
+
+// FIXME: need more robust validations (github.com/asaskevich/govalidator)
+func userValidations(username string, password string) bool {
+	if len(username) >= 255 {
+		return false
+	}
+	return true
+
 }
 
 func main() {

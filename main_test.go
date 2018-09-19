@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/prometheus/common/log"
 )
 
@@ -16,13 +18,14 @@ var a App
 
 func TestMain(m *testing.M) {
 	a = App{}
-	a.InitDB("franklin.db")
+	a.InitDB("franklin-test.db")
 	a.InitRouter()
 
 	query :=
 		`CREATE TABLE IF NOT EXISTS users (
     id INTEGER AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL)`
+    name VARCHAR(255) NOT NULL,
+    password TEXT NOT NULL)`
 
 	if _, err := a.DB.Exec(query); err != nil {
 		log.Fatal(err)
@@ -43,6 +46,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestUserIDDoesNotExist(t *testing.T) {
+
 	_, err := a.DB.Exec("DELETE FROM users")
 	if err != nil {
 		log.Error(err)
@@ -94,7 +98,7 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
-func TestCreateUserInvalidName(t *testing.T) {
+func TestSignInUnauthorized(t *testing.T) {
 	_, err := a.DB.Exec("DELETE FROM users")
 	if err != nil {
 		log.Error(err)
@@ -105,11 +109,77 @@ func TestCreateUserInvalidName(t *testing.T) {
 		log.Error(err)
 	}
 
-	// badName := randSeq(256)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	if err != nil {
+		log.Error(err)
+	}
 
-	url := fmt.Sprintf("/user?name=%s", randSeq(256))
+	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
 
-	req, _ := http.NewRequest("POST", url, nil)
+	req, _ := http.NewRequest("POST", "/signin/", nil)
+
+	req.SetBasicAuth("Test User", "wrong-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestSigninAuthorized(t *testing.T) {
+	_, err := a.DB.Exec("DELETE FROM users")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	if err != nil {
+		log.Error(err)
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	if err != nil {
+		log.Error(err)
+	}
+
+	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
+
+	req, _ := http.NewRequest("POST", "/signin/", nil)
+
+	req.SetBasicAuth("Test User", "correct-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
+	}
+}
+
+func TestUserInvalidName(t *testing.T) {
+	_, err := a.DB.Exec("DELETE FROM users")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	if err != nil {
+		log.Error(err)
+	}
+
+	req, _ := http.NewRequest("POST", "/user/", nil)
+
+	req.SetBasicAuth(randSeq(256), "password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
@@ -120,8 +190,8 @@ func TestCreateUserInvalidName(t *testing.T) {
 
 	var m map[string]string
 	json.Unmarshal(response.Body.Bytes(), &m)
-	if m["error"] != "query parameter is invalid." {
-		t.Errorf("Expected the 'error' key of the response to be set to 'query parameter is invalid.'. Got '%s'", m["error"])
+	if m["error"] != "username/password is invalid." {
+		t.Errorf("Expected the 'error' key of the response to be set to 'username/password is invalid.'. Got '%s'", m["error"])
 	}
 }
 
@@ -136,7 +206,8 @@ func TestCreateUser(t *testing.T) {
 		log.Error(err)
 	}
 
-	req, _ := http.NewRequest("POST", "/user?name=tester", nil)
+	req, _ := http.NewRequest("POST", "/user/", nil)
+	req.SetBasicAuth("new-user", "new-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)

@@ -6,8 +6,9 @@ import (
 )
 
 type user struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
 }
 
 func (u *user) createUser(db *sql.DB) error {
