@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,28 +33,17 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+	clearItemsTable()
 
 	os.Exit(code)
 }
 
 func TestUserIDDoesNotExist(t *testing.T) {
 
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
 
 	req, _ := http.NewRequest("GET", "/user/15", nil)
 
@@ -73,17 +62,9 @@ func TestUserIDDoesNotExist(t *testing.T) {
 }
 
 func TestGetUser(t *testing.T) {
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
-
-	_, err = a.DB.Exec("INSERT INTO users(name) VALUES('Test User')")
+	_, err := a.DB.Exec("INSERT INTO users(name) VALUES('Test User')")
 	if err != nil {
 		log.Error(err)
 	}
@@ -99,15 +80,7 @@ func TestGetUser(t *testing.T) {
 }
 
 func TestSignInUnauthorized(t *testing.T) {
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
-
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
 	if err != nil {
@@ -133,15 +106,8 @@ func TestSignInUnauthorized(t *testing.T) {
 }
 
 func TestSigninAuthorized(t *testing.T) {
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
 	if err != nil {
@@ -167,15 +133,7 @@ func TestSigninAuthorized(t *testing.T) {
 }
 
 func TestUserInvalidName(t *testing.T) {
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
-
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
 
 	req, _ := http.NewRequest("POST", "/user/", nil)
 
@@ -196,15 +154,8 @@ func TestUserInvalidName(t *testing.T) {
 }
 
 func TestCreateUser(t *testing.T) {
-	_, err := a.DB.Exec("DELETE FROM users")
-	if err != nil {
-		log.Error(err)
-	}
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
-	if err != nil {
-		log.Error(err)
-	}
+	clearUsersTable()
 
 	req, _ := http.NewRequest("POST", "/user/", nil)
 	req.SetBasicAuth("new-user", "new-password")
@@ -217,12 +168,188 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+func TestOrderIDDoesNotExist(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
 
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+	req, _ := http.NewRequest("GET", "/order/15?user_id=1", nil)
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusNotFound {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusNotFound, response.Code)
 	}
-	return string(b)
+
+	var m map[string]string
+	json.Unmarshal(response.Body.Bytes(), &m)
+	if m["error"] != "Order not found" {
+		t.Errorf("Expected the 'error' key of the response to be set to 'Order not found'. Got '%s'", m["error"])
+	}
+}
+
+func TestGetOrder(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+	clearItemsTable()
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	if err != nil {
+		log.Error(err)
+	}
+
+	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('apple')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('oranges')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 2)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	req, _ := http.NewRequest("GET", "/order/1?user_id=1", nil)
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
+	}
+}
+
+func TestGetOrderOfOtherUser(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	if err != nil {
+		log.Error(err)
+	}
+
+	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "First User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
+
+	statement = fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Attacker User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('apple')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('oranges')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	req, _ := http.NewRequest("GET", "/order/1?user_id=2", nil)
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusNotFound {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusNotFound, response.Code)
+	}
+}
+
+func TestCreateOrder(t *testing.T) {
+
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+	clearItemsTable()
+
+	jsonStr := []byte(`{"user":"Test User", "user_id": 1, "items": [{"id": 1, "name": "Apples"}, {"id": 2, "name": "Oranges"}]}`)
+
+	req, _ := http.NewRequest("POST", "/order/", bytes.NewBuffer(jsonStr))
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
+	}
+}
+
+func clearUsersTable() {
+	_, err := a.DB.Exec("DELETE FROM users")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	if err != nil {
+		log.Error(err)
+	}
+}
+
+func clearOrdersTable() {
+	_, err := a.DB.Exec("DELETE FROM orders")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='orders';")
+	if err != nil {
+		log.Error(err)
+	}
+}
+
+func clearOrderItemsTable() {
+	_, err := a.DB.Exec("DELETE FROM order_items")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='order_items';")
+	if err != nil {
+		log.Error(err)
+	}
+}
+
+func clearItemsTable() {
+	_, err := a.DB.Exec("DELETE FROM items")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='items';")
+	if err != nil {
+		log.Error(err)
+	}
 }
