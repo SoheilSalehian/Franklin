@@ -74,10 +74,6 @@ func (o *Order) createOrder(db *sql.DB) error {
 	return nil
 }
 
-func (o *Order) updateOrder(db *sql.DB) error {
-	return errors.New("TBD")
-}
-
 func (o *Order) getOrder(db *sql.DB, userID string) error {
 
 	statement := `SELECT users.name, order_items.item_id, items.name FROM orders 
@@ -92,25 +88,83 @@ func (o *Order) getOrder(db *sql.DB, userID string) error {
 		log.Error(err)
 		return err
 	}
-
-	if !rows.Next() {
-		err := errors.New("No DB results found")
-		log.Error(err)
-		return err
-	}
+	defer rows.Close()
 
 	i := Item{}
 
-	for rows.Next() {
+	if rows.Next() {
 		err = rows.Scan(&o.User, &i.ID, &i.Name)
 		if err != nil {
 			log.Error(err)
 			return err
 		}
 		o.Items = append(o.Items, i)
+		for rows.Next() {
+			err = rows.Scan(&o.User, &i.ID, &i.Name)
+			if err != nil {
+				log.Error(err)
+				return err
+			}
+			o.Items = append(o.Items, i)
+		}
+	} else {
+		e := errors.New("No DB results found")
+		log.Error(e)
+		return e
 	}
 
 	return nil
+}
+
+func getOrders(db *sql.DB, userID string, count, start int) ([]int, error) {
+
+	statement := `SELECT orders.id FROM orders 
+  INNER JOIN users ON orders.user_id=users.id
+  WHERE users.id=$1 ORDER BY orders.id DESC;
+  `
+	rows, err := db.Query(statement, userID)
+	if err != nil {
+		log.Error(err)
+		if err == sql.ErrNoRows {
+			e := errors.New("No DB results found")
+			log.Error(e)
+			return nil, err
+		}
+	}
+	defer rows.Close()
+
+	var orders []int
+	var id int
+	// FIXME: Isn't there a cleaner way?
+	if rows.Next() {
+		err = rows.Scan(&id)
+		if err != nil {
+			log.Error(err)
+			return nil, err
+		}
+
+		orders = append(orders, id)
+
+		for rows.Next() {
+			err = rows.Scan(&id)
+			if err != nil {
+				log.Error(err)
+				return nil, err
+			}
+
+			orders = append(orders, id)
+		}
+	} else {
+		e := errors.New("No DB results found")
+		log.Error(e)
+		return nil, e
+	}
+
+	return orders, nil
+}
+
+func (o *Order) updateOrder(db *sql.DB) error {
+	return errors.New("TBD")
 }
 
 func (o *Order) deleteOrder(db *sql.DB) error {

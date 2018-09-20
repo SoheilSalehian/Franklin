@@ -244,6 +244,7 @@ func TestGetOrderOfOtherUser(t *testing.T) {
 	clearUsersTable()
 	clearOrdersTable()
 	clearOrderItemsTable()
+	clearItemsTable()
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
 	if err != nil {
@@ -277,6 +278,15 @@ func TestGetOrderOfOtherUser(t *testing.T) {
 		log.Error(err)
 	}
 
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 2)")
+	if err != nil {
+		log.Error(err)
+	}
 	req, _ := http.NewRequest("GET", "/order/1?user_id=2", nil)
 
 	response := httptest.NewRecorder()
@@ -297,6 +307,52 @@ func TestCreateOrder(t *testing.T) {
 	jsonStr := []byte(`{"user":"Test User", "user_id": 1, "items": [{"id": 1, "name": "Apples"}, {"id": 2, "name": "Oranges"}]}`)
 
 	req, _ := http.NewRequest("POST", "/order/", bytes.NewBuffer(jsonStr))
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
+	}
+}
+
+func TestGetOrders(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	if err != nil {
+		log.Error(err)
+	}
+
+	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('apple')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('oranges')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	req, _ := http.NewRequest("GET", "/orders/?user_id=1&count=10&start=0", nil)
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)

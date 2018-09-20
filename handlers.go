@@ -36,14 +36,17 @@ func (a *App) InitDB(dbName string) error {
 
 func (a *App) InitRouter() {
 	a.Router = mux.NewRouter()
+
 	a.Router.HandleFunc("/signin/", a.basicAuth(a.signin)).Methods("POST")
+
 	a.Router.HandleFunc("/user/", a.createUser).Methods("POST")
-	// Built-in id validations
-	a.Router.HandleFunc("/user/{id:[0-9]+}", a.updateUser).Methods("PUT")
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.getUser).Methods("GET")
+	// TODO:Placeholders for a possible admin
+	a.Router.HandleFunc("/user/{id:[0-9]+}", a.updateUser).Methods("PUT")
 	a.Router.HandleFunc("/user/{id:[0-9]+}", a.deleteUser).Methods("DELETE")
 
 	a.Router.HandleFunc("/order/{id:[0-9]+}", a.getOrder).Queries("user_id", "{user_id}").Methods("GET")
+	a.Router.HandleFunc("/orders/", a.getOrders).Queries("user_id", "{user_id}").Methods("GET")
 	a.Router.HandleFunc("/order/", a.createOrder).Methods("POST")
 }
 
@@ -148,7 +151,31 @@ func (a *App) createOrder(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, o)
 }
 
-// Genearal handlers
+func (a *App) getOrders(w http.ResponseWriter, r *http.Request) {
+	userID := r.FormValue("user_id")
+	v := r.URL.Query()
+	count, _ := strconv.Atoi(v.Get("count"))
+	start, _ := strconv.Atoi(v.Get("start"))
+
+	// TODO: add proper valiations
+	if count > 10 || count < 1 {
+		count = 10
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	orders, err := getOrders(a.DB, userID, count, start)
+	if err != nil {
+		log.Info(orders)
+		log.Error(err)
+		respondWithError(w, http.StatusNotFound, "No orders found.")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, orders)
+}
+
+// Genearal handlers and middleware
 //
 //
 
