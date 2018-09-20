@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/prometheus/common/log"
+	"github.com/stretchr/testify/assert"
 )
 
 var a App
@@ -45,147 +45,140 @@ func TestUserIDDoesNotExist(t *testing.T) {
 
 	clearUsersTable()
 
-	req, _ := http.NewRequest("GET", "/user/15", nil)
+	setAuthentication()
 
-	response := httptest.NewRecorder()
-	a.Router.ServeHTTP(response, req)
-
-	if response.Code != http.StatusNotFound {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusNotFound, response.Code)
-	}
-
-	var m map[string]string
-	json.Unmarshal(response.Body.Bytes(), &m)
-	if m["error"] != "User not found" {
-		t.Errorf("Expected the 'error' key of the response to be set to 'User not found'. Got '%s'", m["error"])
-	}
-}
-
-func TestGetUser(t *testing.T) {
-	clearUsersTable()
-
-	_, err := a.DB.Exec("INSERT INTO users(name) VALUES('Test User')")
-	if err != nil {
-		log.Error(err)
-	}
-
-	req, _ := http.NewRequest("GET", "/user/1", nil)
-
-	response := httptest.NewRecorder()
-	a.Router.ServeHTTP(response, req)
-
-	if response.Code != http.StatusOK {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
-	}
-}
-
-func TestSignInUnauthorized(t *testing.T) {
-	clearUsersTable()
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
-	if err != nil {
-		log.Error(err)
-	}
-
-	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
-	_, err = a.DB.Exec(statement)
-	if err != nil {
-		log.Error(err)
-	}
-
-	req, _ := http.NewRequest("POST", "/signin/", nil)
-
-	req.SetBasicAuth("Test User", "wrong-password")
-
-	response := httptest.NewRecorder()
-	a.Router.ServeHTTP(response, req)
-
-	if response.Code != http.StatusUnauthorized {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusUnauthorized, response.Code)
-	}
-}
-
-func TestSigninAuthorized(t *testing.T) {
-
-	clearUsersTable()
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
-	if err != nil {
-		log.Error(err)
-	}
-
-	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
-	_, err = a.DB.Exec(statement)
-	if err != nil {
-		log.Error(err)
-	}
-
-	req, _ := http.NewRequest("POST", "/signin/", nil)
+	req, _ := http.NewRequest("GET", "/users/15", nil)
 
 	req.SetBasicAuth("Test User", "correct-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusOK {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"error":"User not found."}`)
+
+	assert.Equal(t, response.Code, http.StatusNotFound)
+}
+
+func TestGetUser(t *testing.T) {
+	clearUsersTable()
+
+	setAuthentication()
+
+	_, err := a.DB.Exec("INSERT INTO users(name) VALUES('Test User')")
+	if err != nil {
+		log.Error(err)
 	}
+
+	req, _ := http.NewRequest("GET", "/users/1", nil)
+
+	req.SetBasicAuth("Test User", "correct-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"id":1,"name":"Test User"}`)
+
+	assert.Equal(t, response.Code, http.StatusOK)
+}
+
+func TestSignInUnauthorized(t *testing.T) {
+	clearUsersTable()
+
+	setAuthentication()
+
+	req, _ := http.NewRequest("POST", "/signin", nil)
+
+	req.SetBasicAuth("Test User", "wrong-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"error":"Unauthorized."}`)
+
+	assert.Equal(t, response.Code, http.StatusUnauthorized)
+
+}
+
+func TestSigninAuthorized(t *testing.T) {
+
+	clearUsersTable()
+
+	setAuthentication()
+	req, _ := http.NewRequest("POST", "/signin", nil)
+
+	req.SetBasicAuth("Test User", "correct-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"message":"Sign-in successful."}`)
+
+	assert.Equal(t, response.Code, http.StatusOK)
+
 }
 
 func TestUserInvalidName(t *testing.T) {
 	clearUsersTable()
 
-	req, _ := http.NewRequest("POST", "/user/", nil)
+	setAuthentication()
+	req, _ := http.NewRequest("POST", "/users", nil)
 
 	req.SetBasicAuth(randSeq(256), "password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusBadRequest {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusBadRequest, response.Code)
-	}
+	actual := string(response.Body.Bytes())
 
-	var m map[string]string
-	json.Unmarshal(response.Body.Bytes(), &m)
-	if m["error"] != "username/password is invalid." {
-		t.Errorf("Expected the 'error' key of the response to be set to 'username/password is invalid.'. Got '%s'", m["error"])
-	}
+	assert.JSONEq(t, actual, `{"error":"username/password is invalid."}`)
+
+	assert.Equal(t, response.Code, http.StatusBadRequest)
+
 }
 
 func TestCreateUser(t *testing.T) {
 
 	clearUsersTable()
 
-	req, _ := http.NewRequest("POST", "/user/", nil)
+	req, _ := http.NewRequest("POST", "/users", nil)
 	req.SetBasicAuth("new-user", "new-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusOK {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
-	}
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"id":0,"name":"new-user"}`)
+
+	assert.Equal(t, response.Code, http.StatusOK)
 }
 
 func TestOrderIDDoesNotExist(t *testing.T) {
 	clearUsersTable()
 	clearOrdersTable()
 
-	req, _ := http.NewRequest("GET", "/order/15?user_id=1", nil)
+	setAuthentication()
+	req, _ := http.NewRequest("GET", "/orders/15?user_id=1", nil)
+
+	req.SetBasicAuth("Test User", "correct-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusNotFound {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusNotFound, response.Code)
-	}
+	actual := string(response.Body.Bytes())
 
-	var m map[string]string
-	json.Unmarshal(response.Body.Bytes(), &m)
-	if m["error"] != "Order not found" {
-		t.Errorf("Expected the 'error' key of the response to be set to 'Order not found'. Got '%s'", m["error"])
-	}
+	assert.JSONEq(t, actual, `{"error":"Order not found."}`)
+
+	assert.Equal(t, response.Code, http.StatusNotFound)
+
 }
 
 func TestGetOrder(t *testing.T) {
@@ -194,18 +187,9 @@ func TestGetOrder(t *testing.T) {
 	clearOrderItemsTable()
 	clearItemsTable()
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
-	if err != nil {
-		log.Error(err)
-	}
+	setAuthentication()
 
-	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
-	_, err = a.DB.Exec(statement)
-	if err != nil {
-		log.Error(err)
-	}
-
-	_, err = a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
+	_, err := a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
 	if err != nil {
 		log.Error(err)
 	}
@@ -230,14 +214,18 @@ func TestGetOrder(t *testing.T) {
 		log.Error(err)
 	}
 
-	req, _ := http.NewRequest("GET", "/order/1?user_id=1", nil)
+	req, _ := http.NewRequest("GET", "/orders/1?user_id=1", nil)
+
+	req.SetBasicAuth("Test User", "correct-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusOK {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
-	}
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"id":1,"user":"Test User","user_id":0,"items":[{"id":1,"name":"apple"},{"id":2,"name":"oranges"}]}`)
+
+	assert.Equal(t, response.Code, http.StatusOK)
 }
 
 func TestGetOrderOfOtherUser(t *testing.T) {
@@ -287,14 +275,18 @@ func TestGetOrderOfOtherUser(t *testing.T) {
 	if err != nil {
 		log.Error(err)
 	}
-	req, _ := http.NewRequest("GET", "/order/1?user_id=2", nil)
+	req, _ := http.NewRequest("GET", "/orders/1?user_id=2", nil)
+
+	req.SetBasicAuth("Attacker User", "correct-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusNotFound {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusNotFound, response.Code)
-	}
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"error":"Order not found."}`)
+
+	assert.Equal(t, response.Code, http.StatusNotFound)
 }
 
 func TestCreateOrder(t *testing.T) {
@@ -304,16 +296,22 @@ func TestCreateOrder(t *testing.T) {
 	clearOrderItemsTable()
 	clearItemsTable()
 
+	setAuthentication()
+
 	jsonStr := []byte(`{"user":"Test User", "user_id": 1, "items": [{"id": 1, "name": "Apples"}, {"id": 2, "name": "Oranges"}]}`)
 
-	req, _ := http.NewRequest("POST", "/order/", bytes.NewBuffer(jsonStr))
+	req, _ := http.NewRequest("POST", "/orders", bytes.NewBuffer(jsonStr))
+
+	req.SetBasicAuth("Test User", "correct-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusOK {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
-	}
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `{"id":1,"user":"Test User","user_id":1,"items":[{"id":1,"name":"Apples"},{"id":2,"name":"Oranges"}]}`)
+
+	assert.Equal(t, response.Code, http.StatusOK)
 }
 
 func TestGetOrders(t *testing.T) {
@@ -321,18 +319,9 @@ func TestGetOrders(t *testing.T) {
 	clearOrdersTable()
 	clearOrderItemsTable()
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
-	if err != nil {
-		log.Error(err)
-	}
+	setAuthentication()
 
-	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
-	_, err = a.DB.Exec(statement)
-	if err != nil {
-		log.Error(err)
-	}
-
-	_, err = a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
+	_, err := a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
 	if err != nil {
 		log.Error(err)
 	}
@@ -352,14 +341,42 @@ func TestGetOrders(t *testing.T) {
 		log.Error(err)
 	}
 
-	req, _ := http.NewRequest("GET", "/orders/?user_id=1&count=10&start=0", nil)
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('avacado')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 2)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(2, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(2, 3)")
+	if err != nil {
+		log.Error(err)
+	}
+	req, _ := http.NewRequest("GET", "/orders?user_id=1&count=10&start=0", nil)
+
+	req.SetBasicAuth("Test User", "correct-password")
 
 	response := httptest.NewRecorder()
 	a.Router.ServeHTTP(response, req)
 
-	if response.Code != http.StatusOK {
-		t.Errorf("Expected response code: %d. Got %d", http.StatusOK, response.Code)
-	}
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, actual, `[{"id":2,"user":"Test User","user_id":1,"items":[{"id":1,"name":"apple"},{"id":3,"name":"avacado"}]},{"id":1,"user":"Test User","user_id":1,"items":[{"id":1,"name":"apple"},{"id":2,"name":"oranges"}]}]`)
+
+	assert.Equal(t, response.Code, http.StatusOK)
 }
 
 func clearUsersTable() {
@@ -408,4 +425,18 @@ func clearItemsTable() {
 	if err != nil {
 		log.Error(err)
 	}
+}
+
+func setAuthentication() {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	if err != nil {
+		log.Error(err)
+	}
+
+	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
+	_, err = a.DB.Exec(statement)
+	if err != nil {
+		log.Error(err)
+	}
+
 }

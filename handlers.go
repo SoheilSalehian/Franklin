@@ -37,17 +37,17 @@ func (a *App) InitDB(dbName string) error {
 func (a *App) InitRouter() {
 	a.Router = mux.NewRouter()
 
-	a.Router.HandleFunc("/signin/", a.basicAuth(a.signin)).Methods("POST")
+	a.Router.HandleFunc("/signin", a.basicAuth(a.signin)).Methods("POST")
 
-	a.Router.HandleFunc("/user/", a.createUser).Methods("POST")
-	a.Router.HandleFunc("/user/{id:[0-9]+}", a.getUser).Methods("GET")
+	a.Router.HandleFunc("/users", a.createUser).Methods("POST")
+	a.Router.HandleFunc("/users/{id:[0-9]+}", a.basicAuth(a.getUser)).Methods("GET")
 	// TODO:Placeholders for a possible admin
-	a.Router.HandleFunc("/user/{id:[0-9]+}", a.updateUser).Methods("PUT")
-	a.Router.HandleFunc("/user/{id:[0-9]+}", a.deleteUser).Methods("DELETE")
+	a.Router.HandleFunc("/users/{id:[0-9]+}", a.updateUser).Methods("PUT")
+	a.Router.HandleFunc("/users/{id:[0-9]+}", a.deleteUser).Methods("DELETE")
 
-	a.Router.HandleFunc("/order/{id:[0-9]+}", a.getOrder).Queries("user_id", "{user_id}").Methods("GET")
-	a.Router.HandleFunc("/orders/", a.getOrders).Queries("user_id", "{user_id}").Methods("GET")
-	a.Router.HandleFunc("/order/", a.createOrder).Methods("POST")
+	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.getOrder)).Queries("user_id", "{user_id}").Methods("GET")
+	a.Router.HandleFunc("/orders", a.basicAuth(a.getOrders)).Queries("user_id", "{user_id}").Methods("GET")
+	a.Router.HandleFunc("/orders", a.basicAuth(a.createOrder)).Methods("POST")
 }
 
 // User handlers
@@ -77,10 +77,10 @@ func (a *App) createUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "User could not be created.")
 		return
 	}
+
 	respondWithJSON(w, http.StatusOK, u)
 }
 
-// FIXME: need to wrap basicAuth
 func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -93,7 +93,7 @@ func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 	u := User{ID: id}
 	if err := u.getUser(a.DB); err != nil {
 		log.Error(err)
-		respondWithError(w, http.StatusNotFound, "User not found")
+		respondWithError(w, http.StatusNotFound, "User not found.")
 		return
 	}
 	respondWithJSON(w, http.StatusOK, u)
@@ -111,7 +111,6 @@ func (a *App) updateUser(w http.ResponseWriter, r *http.Request) {
 //
 //
 
-// FIXME: need to wrap basicAuth
 func (a *App) getOrder(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
@@ -127,13 +126,12 @@ func (a *App) getOrder(w http.ResponseWriter, r *http.Request) {
 	o := Order{ID: id}
 	if err := o.getOrder(a.DB, userID); err != nil {
 		log.Error(err)
-		respondWithError(w, http.StatusNotFound, "Order not found")
+		respondWithError(w, http.StatusNotFound, "Order not found.")
 		return
 	}
 	respondWithJSON(w, http.StatusOK, o)
 }
 
-// FIXME: need to wrap basicAuth
 func (a *App) createOrder(w http.ResponseWriter, r *http.Request) {
 	o := Order{}
 	err := json.NewDecoder(r.Body).Decode(&o)
@@ -167,11 +165,11 @@ func (a *App) getOrders(w http.ResponseWriter, r *http.Request) {
 
 	orders, err := getOrders(a.DB, userID, count, start)
 	if err != nil {
-		log.Info(orders)
 		log.Error(err)
 		respondWithError(w, http.StatusNotFound, "No orders found.")
 		return
 	}
+
 	respondWithJSON(w, http.StatusOK, orders)
 }
 
@@ -180,7 +178,7 @@ func (a *App) getOrders(w http.ResponseWriter, r *http.Request) {
 //
 
 func (a *App) signin(w http.ResponseWriter, r *http.Request) {
-	respondWithJSON(w, http.StatusOK, map[string]string{"result": "Sign-in successful."})
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Sign-in successful."})
 }
 
 func (a *App) basicAuth(fn http.HandlerFunc) http.HandlerFunc {

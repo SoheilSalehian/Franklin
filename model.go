@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"strconv"
 
 	"github.com/prometheus/common/log"
 )
@@ -10,12 +11,13 @@ import (
 type User struct {
 	ID       int    `json:"id"`
 	Name     string `json:"name"`
-	Password string `json:"password"`
+	Password string `json:"password,omitempty"`
 }
 
 func (u *User) createUser(db *sql.DB) error {
-	statement := `INSERT INTO users(name) VALUES('?')`
-	_, err := db.Exec(statement, u.Name)
+	statement := `INSERT INTO users(name,password) VALUES('?', '?')`
+	_, err := db.Exec(statement, u.Name, u.Password)
+	u.Password = ""
 	return err
 }
 
@@ -33,11 +35,13 @@ func (u *User) deleteUser(db *sql.DB) error {
 }
 
 type Order struct {
-	ID     int    `json:"id",omitempty`
+	ID     int    `json:"id,omitempty"`
 	User   string `json:"user"`
 	UserID int    `json:"user_id"`
 	Items  `json:"items"`
 }
+
+type Orders []Order
 
 type Items []Item
 
@@ -47,7 +51,6 @@ type Item struct {
 }
 
 func (o *Order) createOrder(db *sql.DB) error {
-	// log.Info(o)
 	statement := `INSERT INTO orders(user_id) VALUES('?')`
 	result, err := db.Exec(statement, o.UserID)
 	if err != nil {
@@ -116,13 +119,14 @@ func (o *Order) getOrder(db *sql.DB, userID string) error {
 	return nil
 }
 
-func getOrders(db *sql.DB, userID string, count, start int) ([]int, error) {
+func getOrders(db *sql.DB, userID string, count, start int) (Orders, error) {
 
 	statement := `SELECT orders.id FROM orders 
   INNER JOIN users ON orders.user_id=users.id
-  WHERE users.id=$1 ORDER BY orders.id DESC;
+  WHERE users.id=$1 ORDER BY orders.id DESC LIMIT $2 OFFSET $3;
   `
-	rows, err := db.Query(statement, userID)
+
+	rows, err := db.Query(statement, userID, count, start)
 	if err != nil {
 		log.Error(err)
 		if err == sql.ErrNoRows {
@@ -133,31 +137,80 @@ func getOrders(db *sql.DB, userID string, count, start int) ([]int, error) {
 	}
 	defer rows.Close()
 
-	var orders []int
-	var id int
+	var orders Orders
+	var orderIDs []int
+	var oID int
+
 	// FIXME: Isn't there a cleaner way?
 	if rows.Next() {
-		err = rows.Scan(&id)
+		err = rows.Scan(&oID)
 		if err != nil {
 			log.Error(err)
 			return nil, err
 		}
 
-		orders = append(orders, id)
+		orderIDs = append(orderIDs, oID)
 
 		for rows.Next() {
-			err = rows.Scan(&id)
+			err = rows.Scan(&oID)
 			if err != nil {
 				log.Error(err)
 				return nil, err
 			}
 
-			orders = append(orders, id)
+			orderIDs = append(orderIDs, oID)
 		}
 	} else {
 		e := errors.New("No DB results found")
 		log.Error(e)
 		return nil, e
+	}
+
+	for _, oID := range orderIDs {
+
+		statement := `SELECT users.name, order_items.item_id, items.name FROM orders 
+  INNER JOIN order_items ON order_items.order_id=orders.id
+  INNER JOIN items ON order_items.item_id=items.id
+  INNER JOIN users ON orders.user_id=users.id
+  WHERE orders.id=$1 AND users.id=$2;
+  `
+
+		rows, err := db.Query(statement, oID, userID)
+		if err != nil {
+			log.Error(err)
+			return nil, err
+		}
+		defer rows.Close()
+
+		o := Order{}
+		i := Item{}
+
+		if rows.Next() {
+			err = rows.Scan(&o.User, &i.ID, &i.Name)
+			if err != nil {
+				log.Error(err)
+				return nil, err
+			}
+			o.Items = append(o.Items, i)
+			o.ID = oID
+			o.UserID, _ = strconv.Atoi(userID)
+			for rows.Next() {
+				err = rows.Scan(&o.User, &i.ID, &i.Name)
+				if err != nil {
+					log.Error(err)
+					return nil, err
+				}
+				o.Items = append(o.Items, i)
+				o.ID = oID
+				o.UserID, _ = strconv.Atoi(userID)
+			}
+		} else {
+			e := errors.New("No DB second results found")
+			log.Error(e)
+			return nil, e
+		}
+
+		orders = append(orders, o)
 	}
 
 	return orders, nil
