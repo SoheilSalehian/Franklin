@@ -286,7 +286,7 @@ func (o *Order) updateOrder(db *sql.DB) error {
 	for _, delID := range dels {
 		_, err = db.Exec(statement, o.ID, delID)
 		if err != nil {
-			log.Error("deleting from orders_items failed.")
+			log.Error("deleting from order_items failed.")
 			return err
 		}
 	}
@@ -327,5 +327,12 @@ func (o *Order) getItemIDs() []int {
 }
 
 func (o *Order) deleteOrder(db *sql.DB) error {
-	return errors.New("TBD")
+
+	statement := `DELETE FROM orders WHERE user_id =? AND id=?`
+	_, err := db.Exec(statement, o.UserID, o.ID)
+	if err != nil {
+		log.Error("deleting from orders failed: ", err)
+		return err
+	}
+	return nil
 }

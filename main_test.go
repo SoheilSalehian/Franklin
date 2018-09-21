@@ -487,64 +487,116 @@ func TestUpdateOrder(t *testing.T) {
 	assert.Equal(t, response.Code, http.StatusOK)
 }
 
-func clearUsersTable() {
-	_, err := a.DB.Exec("DELETE FROM users")
+func TestDeleteOrder(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+	clearItemsTable()
+
+	setAuthentication()
+
+	_, err := a.DB.Exec("INSERT INTO orders(user_id) VALUES('1')")
 	if err != nil {
 		log.Error(err)
 	}
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='users';")
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('apple')")
 	if err != nil {
 		log.Error(err)
 	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('oranges')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('avacado')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(2, 2)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	jsonStr := []byte(`{"user":"Test User", "user_id": 1}`)
+
+	req, _ := http.NewRequest("DELETE", "/orders/1", bytes.NewBuffer(jsonStr))
+
+	req.SetBasicAuth("Test User", "correct-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	actual := string(response.Body.Bytes())
+	log.Info(actual)
+
+	assert.JSONEq(t, `{"id":1,"user":"Test User","user_id":1,"items":null}`, actual)
+
+	assert.Equal(t, response.Code, http.StatusOK)
 }
 
-func clearOrdersTable() {
-	_, err := a.DB.Exec("DELETE FROM orders")
+func TestDeleteOtherUsersOrder(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+	clearItemsTable()
+
+	setAuthentication()
+
+	_, err := a.DB.Exec("INSERT INTO orders(id, user_id) VALUES('1', '1')")
 	if err != nil {
 		log.Error(err)
 	}
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='orders';")
-	if err != nil {
-		log.Error(err)
-	}
-}
-
-func clearOrderItemsTable() {
-	_, err := a.DB.Exec("DELETE FROM order_items")
+	_, err = a.DB.Exec("INSERT INTO orders(id, user_id) VALUES('2', '2')")
 	if err != nil {
 		log.Error(err)
 	}
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='order_items';")
-	if err != nil {
-		log.Error(err)
-	}
-}
-
-func clearItemsTable() {
-	_, err := a.DB.Exec("DELETE FROM items")
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('apple')")
 	if err != nil {
 		log.Error(err)
 	}
 
-	_, err = a.DB.Exec("UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='items';")
-	if err != nil {
-		log.Error(err)
-	}
-}
-
-func setAuthentication() {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), 8)
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('oranges')")
 	if err != nil {
 		log.Error(err)
 	}
 
-	statement := fmt.Sprintf(`INSERT INTO users(name,password) VALUES('%s', '%s')`, "Test User", hashedPassword)
-	_, err = a.DB.Exec(statement)
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('avacado')")
 	if err != nil {
 		log.Error(err)
 	}
 
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 3)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	jsonStr := []byte(`{"user":"First User", "user_id": 1}`)
+
+	req, _ := http.NewRequest("DELETE", "/orders/1", bytes.NewBuffer(jsonStr))
+
+	req.SetBasicAuth("Test User", "correct-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, `{"error":"Forbidden."}`, actual)
+
+	assert.Equal(t, response.Code, http.StatusForbidden)
 }

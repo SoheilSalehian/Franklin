@@ -49,7 +49,7 @@ func (a *App) InitRouter() {
 	a.Router.HandleFunc("/orders", a.basicAuth(a.createOrder)).Methods("POST")
 
 	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.updateOrder).Methods("PUT")
-	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.deleteOrder).Methods("DELETE")
+	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.deleteOrder)).Methods("DELETE")
 }
 
 // User handlers
@@ -247,17 +247,37 @@ func (a *App) updateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) deleteOrder(w http.ResponseWriter, r *http.Request) {
+
+	vars := mux.Vars(r)
+
+	user, _, _ := r.BasicAuth()
+
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusBadRequest, "User ID is invalid.")
+		return
+	}
+
 	o := Order{}
-	err := json.NewDecoder(r.Body).Decode(&o)
+	o.ID = id
+
+	err = json.NewDecoder(r.Body).Decode(&o)
 	if err != nil {
 		log.Error(err)
 		respondWithError(w, http.StatusBadRequest, "Order ID is invalid.")
 		return
 	}
 
-	if err := o.updateOrder(a.DB); err != nil {
+	if user != o.User {
+		log.Error("Unathorized attempt to delete order by user: ", user)
+		respondWithError(w, http.StatusForbidden, "Forbidden.")
+		return
+	}
+
+	if err := o.deleteOrder(a.DB); err != nil {
 		log.Error(err)
-		respondWithError(w, http.StatusInternalServerError, "order could not be updated.")
+		respondWithError(w, http.StatusInternalServerError, "order could not be deleted.")
 		return
 	}
 	respondWithJSON(w, http.StatusOK, o)
