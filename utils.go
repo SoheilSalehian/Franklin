@@ -20,3 +20,22 @@ func randSeq(n int) string {
 	}
 	return string(b)
 }
+
+func compare(X, Y []int) []int {
+	m := make(map[int]int)
+
+	for _, y := range Y {
+		m[y]++
+	}
+
+	var ret []int
+	for _, x := range X {
+		if m[x] > 0 {
+			m[x]--
+			continue
+		}
+		ret = append(ret, x)
+	}
+
+	return ret
+}

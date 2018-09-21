@@ -43,13 +43,13 @@ func (a *App) InitRouter() {
 
 	a.Router.HandleFunc("/users", a.createUser).Methods("POST")
 	a.Router.HandleFunc("/users/{id:[0-9]+}", a.basicAuth(a.getUser)).Methods("GET")
-	// TODO:Placeholders for a possible admin
-	a.Router.HandleFunc("/users/{id:[0-9]+}", a.updateUser).Methods("PUT")
-	a.Router.HandleFunc("/users/{id:[0-9]+}", a.deleteUser).Methods("DELETE")
 
 	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.getOrder)).Queries("user_id", "{user_id}").Methods("GET")
 	a.Router.HandleFunc("/orders", a.basicAuth(a.getOrders)).Queries("user_id", "{user_id}").Methods("GET")
 	a.Router.HandleFunc("/orders", a.basicAuth(a.createOrder)).Methods("POST")
+
+	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.updateOrder).Methods("PUT")
+	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.deleteOrder).Methods("DELETE")
 }
 
 // User handlers
@@ -215,6 +215,52 @@ func (a *App) getOrders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, orders)
+}
+
+func (a *App) updateOrder(w http.ResponseWriter, r *http.Request) {
+
+	o := Order{}
+
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusBadRequest, "User ID is invalid.")
+		return
+	}
+
+	o.ID = id
+
+	err = json.NewDecoder(r.Body).Decode(&o)
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusBadRequest, "Order ID is invalid.")
+		return
+	}
+
+	if err := o.updateOrder(a.DB); err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusInternalServerError, "order could not be updated.")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, o)
+}
+
+func (a *App) deleteOrder(w http.ResponseWriter, r *http.Request) {
+	o := Order{}
+	err := json.NewDecoder(r.Body).Decode(&o)
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusBadRequest, "Order ID is invalid.")
+		return
+	}
+
+	if err := o.updateOrder(a.DB); err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusInternalServerError, "order could not be updated.")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, o)
 }
 
 // Genearal handlers and middleware

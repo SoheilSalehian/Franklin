@@ -39,10 +39,6 @@ func (u *User) createUser(db *sql.DB) error {
 	return err
 }
 
-func (u *User) updateUser(db *sql.DB) error {
-	return errors.New("TBD")
-}
-
 func (u *User) getUser(db *sql.DB) error {
 	statement := `SELECT name,store_lat,store_lon FROM users WHERE id=$1`
 	var lat, lon float64
@@ -50,10 +46,6 @@ func (u *User) getUser(db *sql.DB) error {
 	u.ClosestStore.Coordinates = append(u.ClosestStore.Coordinates, lat)
 	u.ClosestStore.Coordinates = append(u.ClosestStore.Coordinates, lon)
 	return err
-}
-
-func (u *User) deleteUser(db *sql.DB) error {
-	return errors.New("TBD")
 }
 
 type Order struct {
@@ -91,7 +83,7 @@ func (o *Order) createOrder(db *sql.DB) error {
 	for _, item := range o.Items {
 		_, err = db.Exec(statement, o.ID, item.ID)
 		if err != nil {
-			log.Error("inserting to orders_items failed.")
+			log.Error("inserting to order_items failed.")
 			return err
 		}
 	}
@@ -163,7 +155,7 @@ func getOrders(db *sql.DB, userID string, count, start int) (Orders, error) {
 	var orderIDs []int
 	var oID int
 
-	// FIXME: Isn't there a cleaner way?
+	// FIXME: Isn't there a cleaner way? needs serious refactoring
 	if rows.Next() {
 		err = rows.Scan(&oID)
 		if err != nil {
@@ -227,7 +219,7 @@ func getOrders(db *sql.DB, userID string, count, start int) (Orders, error) {
 				o.UserID, _ = strconv.Atoi(userID)
 			}
 		} else {
-			e := errors.New("No DB second results found")
+			e := errors.New("No DB results found")
 			log.Error(e)
 			return nil, e
 		}
@@ -238,8 +230,100 @@ func getOrders(db *sql.DB, userID string, count, start int) (Orders, error) {
 	return orders, nil
 }
 
+// FIXME: This needs to be transaction based
 func (o *Order) updateOrder(db *sql.DB) error {
-	return errors.New("TBD")
+
+	statement := `SELECT item_id FROM order_items WHERE order_id=?`
+	rows, err := db.Query(statement, o.ID)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer rows.Close()
+
+	var existing []int
+	var eid int
+
+	if rows.Next() {
+		err = rows.Scan(&eid)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+
+		existing = append(existing, eid)
+		for rows.Next() {
+			err = rows.Scan(&eid)
+			if err != nil {
+				log.Error(err)
+				return err
+			}
+
+			existing = append(existing, eid)
+		}
+
+	} else {
+		e := errors.New("No DB results found")
+		log.Error(e)
+		return e
+	}
+
+	desired := o.getItemIDs()
+
+	dels := compare(existing, desired)
+	adds := compare(desired, existing)
+
+	statement = `INSERT INTO order_items(order_id, item_id) VALUES($1, $2)`
+	for _, addID := range adds {
+		_, err = db.Exec(statement, o.ID, addID)
+		if err != nil {
+			log.Error("inserting to order_items failed.")
+			return err
+		}
+	}
+
+	statement = `DELETE FROM order_items WHERE order_id=? AND item_id=?;`
+	for _, delID := range dels {
+		_, err = db.Exec(statement, o.ID, delID)
+		if err != nil {
+			log.Error("deleting from orders_items failed.")
+			return err
+		}
+	}
+
+	// Verify the results
+	statement = `SELECT COUNT(item_id) FROM order_items WHERE order_id=?`
+	rows, err = db.Query(statement, o.ID)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		err = rows.Scan(&count)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+	}
+
+	if count != len(desired) {
+		e := errors.New("Incorrect updates on order_items.")
+		log.Info(e)
+		return e
+	}
+
+	return nil
+}
+
+func (o *Order) getItemIDs() []int {
+	var ids []int
+	for _, item := range o.Items {
+		ids = append(ids, item.ID)
+	}
+	return ids
 }
 
 func (o *Order) deleteOrder(db *sql.DB) error {
