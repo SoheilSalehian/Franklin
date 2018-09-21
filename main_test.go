@@ -487,6 +487,60 @@ func TestUpdateOrder(t *testing.T) {
 	assert.Equal(t, response.Code, http.StatusOK)
 }
 
+func TestUpdateOtherUsersOrder(t *testing.T) {
+	clearUsersTable()
+	clearOrdersTable()
+	clearOrderItemsTable()
+	clearItemsTable()
+
+	setAuthentication()
+
+	_, err := a.DB.Exec("INSERT INTO orders(id, user_id) VALUES('1', '1')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO orders(id, user_id) VALUES('2', '2')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('oranges')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO items(name) VALUES('avacado')")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 1)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	_, err = a.DB.Exec("INSERT INTO order_items(order_id, item_id) VALUES(1, 2)")
+	if err != nil {
+		log.Error(err)
+	}
+
+	jsonStr := []byte(`{"user":"First User", "user_id": 1, "items": [{"id": 1, "name": "apples"}, {"id": 3, "name": "avacado"}]}`)
+
+	req, _ := http.NewRequest("PUT", "/orders/1", bytes.NewBuffer(jsonStr))
+
+	req.SetBasicAuth("Test User", "correct-password")
+
+	response := httptest.NewRecorder()
+	a.Router.ServeHTTP(response, req)
+
+	actual := string(response.Body.Bytes())
+
+	assert.JSONEq(t, `{"error":"Forbidden."}`, actual)
+
+	assert.Equal(t, response.Code, http.StatusForbidden)
+}
+
 func TestDeleteOrder(t *testing.T) {
 	clearUsersTable()
 	clearOrdersTable()
@@ -535,7 +589,6 @@ func TestDeleteOrder(t *testing.T) {
 	a.Router.ServeHTTP(response, req)
 
 	actual := string(response.Body.Bytes())
-	log.Info(actual)
 
 	assert.JSONEq(t, `{"id":1,"user":"Test User","user_id":1,"items":null}`, actual)
 

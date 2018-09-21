@@ -48,7 +48,7 @@ func (a *App) InitRouter() {
 	a.Router.HandleFunc("/orders", a.basicAuth(a.getOrders)).Queries("user_id", "{user_id}").Methods("GET")
 	a.Router.HandleFunc("/orders", a.basicAuth(a.createOrder)).Methods("POST")
 
-	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.updateOrder).Methods("PUT")
+	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.updateOrder)).Methods("PUT")
 	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.deleteOrder)).Methods("DELETE")
 }
 
@@ -222,6 +222,8 @@ func (a *App) updateOrder(w http.ResponseWriter, r *http.Request) {
 	o := Order{}
 
 	vars := mux.Vars(r)
+	user, _, _ := r.BasicAuth()
+
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
 		log.Error(err)
@@ -235,6 +237,12 @@ func (a *App) updateOrder(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error(err)
 		respondWithError(w, http.StatusBadRequest, "Order ID is invalid.")
+		return
+	}
+
+	if user != o.User {
+		log.Error("Unathorized attempt to update order by user: ", user)
+		respondWithError(w, http.StatusForbidden, "Forbidden.")
 		return
 	}
 
