@@ -3,7 +3,9 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/gorilla/mux"
@@ -56,21 +58,35 @@ func (a *App) InitRouter() {
 
 // TODO: need to add email verification with redirct to secure this
 func (a *App) createUser(w http.ResponseWriter, r *http.Request) {
+	u := User{}
 
-	username, password, _ := r.BasicAuth()
-	if !userValidations(username, password) {
+	err := json.NewDecoder(r.Body).Decode(&u)
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusBadRequest, "Order ID is invalid.")
+		return
+	}
+
+	if !userValidations(u.Name, u.Password) {
 		log.Error("User name validation failed.")
 		respondWithError(w, http.StatusBadRequest, "username/password is invalid.")
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), 8)
 	if err != nil {
 		log.Error(err)
 		respondWithError(w, http.StatusInternalServerError, "User could not be created.")
 	}
 
-	u := User{Name: username, Password: string(hashedPassword)}
+	u.Password = string(hashedPassword)
+
+	u.ClosestStore, err = a.storeLocator(u.Zipcode)
+	if err != nil {
+		log.Error(err)
+		respondWithError(w, http.StatusInternalServerError, "User could not be created.")
+		return
+	}
 
 	if err := u.createUser(a.DB); err != nil {
 		log.Error(err)
@@ -79,6 +95,34 @@ func (a *App) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, u)
+}
+
+func (a *App) storeLocator(zipcode int) (Store, error) {
+
+	apiKey := os.Getenv("WALMART_OPEN_API_KEY")
+	if apiKey == "" {
+		log.Error("WALMART_OPEN_API_KEY is not set.")
+	}
+
+	url := fmt.Sprintf("http://api.walmartlabs.com/v1/stores?apiKey=%s&zip=%s&format=json", apiKey, strconv.Itoa(zipcode))
+
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Error(err)
+		return Store{}, err
+	}
+	defer resp.Body.Close()
+
+	var stores []Store
+	err = json.NewDecoder(resp.Body).Decode(&stores)
+	if err != nil {
+		log.Error(err)
+		return Store{}, err
+	}
+
+	// TODO: Make this more intelligent (geo-location/order inventory based)
+	return stores[0], nil
+
 }
 
 func (a *App) getUser(w http.ResponseWriter, r *http.Request) {

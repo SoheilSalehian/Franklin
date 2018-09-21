@@ -9,14 +9,32 @@ import (
 )
 
 type User struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Password string `json:"password,omitempty"`
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Password     string `json:"password,omitempty"`
+	Zipcode      int    `json:"zipcode,omitempty"`
+	ClosestStore Store  `json:"closest_store,omitempty"`
+}
+
+type Store struct {
+	City          string    `json:"city,omitempty"`
+	Coordinates   []float64 `json:"coordinates,omitempty"`
+	Country       string    `json:"country,omitempty"`
+	Name          string    `json:"name,omitempty"`
+	No            int       `json:"no,omitempty"`
+	PhoneNumber   string    `json:"phoneNumber,omitempty"`
+	StateProvCode string    `json:"stateProvCode,omitempty"`
+	StreetAddress string    `json:"streetAddress,omitempty"`
+	SundayOpen    bool      `json:"sundayOpen,omitempty"`
+	Timezone      string    `json:"timezone,omitempty"`
+	Zip           string    `json:"zip,omitempty"`
 }
 
 func (u *User) createUser(db *sql.DB) error {
-	statement := `INSERT INTO users(name,password) VALUES('?', '?')`
-	_, err := db.Exec(statement, u.Name, u.Password)
+	statement := "INSERT INTO users(name,password,zip,store_lat,store_lon) VALUES(?, ?, ?, ?, ?)"
+
+	// NOTE: For simplicity, we are assuming that only storing the coordinates from the external API call is allowed.
+	_, err := db.Exec(statement, u.Name, u.Password, u.Zipcode, u.ClosestStore.Coordinates[0], u.ClosestStore.Coordinates[1])
 	u.Password = ""
 	return err
 }
@@ -26,8 +44,12 @@ func (u *User) updateUser(db *sql.DB) error {
 }
 
 func (u *User) getUser(db *sql.DB) error {
-	statement := `SELECT name FROM users WHERE id=$1`
-	return db.QueryRow(statement, u.ID).Scan(&u.Name)
+	statement := `SELECT name,store_lat,store_lon FROM users WHERE id=$1`
+	var lat, lon float64
+	err := db.QueryRow(statement, u.ID).Scan(&u.Name, &lat, &lon)
+	u.ClosestStore.Coordinates = append(u.ClosestStore.Coordinates, lat)
+	u.ClosestStore.Coordinates = append(u.ClosestStore.Coordinates, lon)
+	return err
 }
 
 func (u *User) deleteUser(db *sql.DB) error {
