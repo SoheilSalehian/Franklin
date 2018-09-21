@@ -33,23 +33,23 @@ func (a *App) InitDB(dbName string) error {
 	}
 
 	log.Info("successful connection to DB: ", dbName)
+	log.Info("running on port :8080")
 	return nil
 }
 
 func (a *App) InitRouter() {
 	a.Router = mux.NewRouter()
 
-	a.Router.HandleFunc("/signin", a.basicAuth(a.signin)).Methods("POST")
-
-	a.Router.HandleFunc("/users", a.createUser).Methods("POST")
 	a.Router.HandleFunc("/users/{id:[0-9]+}", a.basicAuth(a.getUser)).Methods("GET")
+	a.Router.HandleFunc("/users", a.createUser).Methods("POST")
 
 	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.getOrder)).Queries("user_id", "{user_id}").Methods("GET")
 	a.Router.HandleFunc("/orders", a.basicAuth(a.getOrders)).Queries("user_id", "{user_id}").Methods("GET")
 	a.Router.HandleFunc("/orders", a.basicAuth(a.createOrder)).Methods("POST")
-
 	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.updateOrder)).Methods("PUT")
 	a.Router.HandleFunc("/orders/{id:[0-9]+}", a.basicAuth(a.deleteOrder)).Methods("DELETE")
+
+	a.Router.HandleFunc("/signin", a.basicAuth(a.signin)).Methods("POST")
 }
 
 // User handlers
@@ -125,6 +125,7 @@ func (a *App) storeLocator(zipcode int) (Store, error) {
 
 }
 
+// FIXME: securing this based on username
 func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -141,14 +142,6 @@ func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondWithJSON(w, http.StatusOK, u)
-}
-
-func (a *App) deleteUser(w http.ResponseWriter, r *http.Request) {
-	respondWithError(w, http.StatusNotImplemented, "n/a")
-}
-
-func (a *App) updateUser(w http.ResponseWriter, r *http.Request) {
-	respondWithError(w, http.StatusNotImplemented, "n/a")
 }
 
 // Order handlers
@@ -248,7 +241,11 @@ func (a *App) updateOrder(w http.ResponseWriter, r *http.Request) {
 
 	if err := o.updateOrder(a.DB); err != nil {
 		log.Error(err)
-		respondWithError(w, http.StatusInternalServerError, "order could not be updated.")
+		if err.Error() == "Order not found." {
+			respondWithError(w, http.StatusNotFound, "Order could not be found.")
+		} else {
+			respondWithError(w, http.StatusInternalServerError, "Order could not be updated.")
+		}
 		return
 	}
 	respondWithJSON(w, http.StatusOK, o)
@@ -285,8 +282,13 @@ func (a *App) deleteOrder(w http.ResponseWriter, r *http.Request) {
 
 	if err := o.deleteOrder(a.DB); err != nil {
 		log.Error(err)
-		respondWithError(w, http.StatusInternalServerError, "order could not be deleted.")
-		return
+		if err.Error() == "Order doesn't exist." {
+			respondWithError(w, http.StatusNotFound, "Order doesn't exist.")
+			return
+		} else {
+			respondWithError(w, http.StatusInternalServerError, "Order could not be deleted.")
+			return
+		}
 	}
 	respondWithJSON(w, http.StatusOK, o)
 }

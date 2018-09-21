@@ -34,7 +34,16 @@ func (u *User) createUser(db *sql.DB) error {
 	statement := "INSERT INTO users(name,password,zip,store_lat,store_lon) VALUES(?, ?, ?, ?, ?)"
 
 	// NOTE: For simplicity, we are assuming that only storing the coordinates from the external API call is allowed.
-	_, err := db.Exec(statement, u.Name, u.Password, u.Zipcode, u.ClosestStore.Coordinates[0], u.ClosestStore.Coordinates[1])
+	result, err := db.Exec(statement, u.Name, u.Password, u.Zipcode, u.ClosestStore.Coordinates[0], u.ClosestStore.Coordinates[1])
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+  log.Info(id)
+
+	u.ID = int(id)
 	u.Password = ""
 	return err
 }
@@ -65,7 +74,7 @@ type Item struct {
 }
 
 func (o *Order) createOrder(db *sql.DB) error {
-	statement := `INSERT INTO orders(user_id) VALUES('?')`
+	statement := `INSERT INTO orders(user_id) VALUES($1)`
 	result, err := db.Exec(statement, o.UserID)
 	if err != nil {
 		log.Error("inserting to orders failed.")
@@ -263,7 +272,7 @@ func (o *Order) updateOrder(db *sql.DB) error {
 		}
 
 	} else {
-		e := errors.New("No DB results found")
+		e := errors.New("Order not found.")
 		log.Error(e)
 		return e
 	}
@@ -329,10 +338,23 @@ func (o *Order) getItemIDs() []int {
 func (o *Order) deleteOrder(db *sql.DB) error {
 
 	statement := `DELETE FROM orders WHERE user_id =? AND id=?`
-	_, err := db.Exec(statement, o.UserID, o.ID)
+	result, err := db.Exec(statement, o.UserID, o.ID)
 	if err != nil {
 		log.Error("deleting from orders failed: ", err)
 		return err
 	}
+
+	number, err := result.RowsAffected()
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	if int(number) == 0 {
+		e := errors.New("Order doesn't exist.")
+		log.Error(e)
+		return e
+	}
+
 	return nil
 }
