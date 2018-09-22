@@ -5,7 +5,9 @@
 
 A simple REST API server that will expose endpoints to allow users to place and modify orders.
 
-## User Stories 
+## User Stories
+
+The following user stories guided the development of the challenge and keep the solution to the problem contrived. 
 
 - As a user I would like be able to signup with my username, pass and zipcode 
 - As a user I would like to signin.
@@ -19,7 +21,7 @@ A simple REST API server that will expose endpoints to allow users to place and 
 
 - As a service user passwords should be encrypted in the database.
 - As a service users can only interact with their own orders.
-- As a service all request needs to be authenticated.
+- As a service all request needs to be authenticated using basicAuth.
 
 ## API Specs
 
@@ -33,14 +35,17 @@ We are using a Golang based API layer, interacting with a sqlite3 database.
 
 ## Quick Setup
 
-1. Make sure Go 1.11+ and Go's dependancy management tool (dep) is installed.
+1. Download/Install Go [Go 1.11+](https://golang.org/dl/) and Go's dependancy management tool (dep):
+```
+go get -u github.com/golang/dep/cmd/dep
+```
 
-2. Get all the dependancies by:
+2. Get all the project's dependancies by:
 ```
 dep ensure
 ```
 
-3. Set environment variable for Walmart's open API key:
+3. Set environment variable for Walmart's open API key (used for the store locator):
 ```
 export WALMART_OPEN_API_KEY= ...
 ```
@@ -55,10 +60,13 @@ go build
 ./Franklin
 ```
 
-6. Ping endpoints 
+6. Ping endpoints
 
 ## Tests
-1. Make sure Go 1.11+ and Go's dependancy management tool (dep) is installed.
+1. Download/Install Go [Go 1.11+](https://golang.org/dl/) and Go's dependancy management tool (dep):
+```
+go get -u github.com/golang/dep/cmd/dep
+```
 
 2. Get all the dependancies by:
 ```
